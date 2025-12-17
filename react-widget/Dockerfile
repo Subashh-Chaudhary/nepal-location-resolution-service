@@ -26,14 +26,14 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/widget.js /usr/share/nginx/html/widget.js
 
 # Create a simple index.html for testing
-RUN echo '<!DOCTYPE html>\n\
-<html>\n\
-<head><title>Nepal Location Widget Test</title></head>\n\
-<body>\n\
-<h1>Nepal Location Widget Test Page</h1>\n\
-<div id="nepal-location-widget"></div>\n\
-<script src="/widget.js"></script>\n\
-</body>\n\
+RUN echo '<!DOCTYPE html>\
+<html>\
+<head><title>Nepal Location Widget Test</title></head>\
+<body>\
+<h1>Nepal Location Widget Test Page</h1>\
+<div id="nepal-location-widget"></div>\
+<script src="/widget.js"></script>\
+</body>\
 </html>' > /usr/share/nginx/html/index.html
 
 EXPOSE 80
