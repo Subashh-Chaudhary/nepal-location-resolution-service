@@ -87,6 +87,30 @@ services:
       retries: 5
 
   # ===========================================
+  # POSTGIS - Spatial Database for OSM Data
+  # ===========================================
+  postgis:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: postgis
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nepal_osm
+      - POSTGRES_USER=osm_user
+      - POSTGRES_PASSWORD=osm_secret_password
+    ports:
+      - "5433:5432"  # Exposed on 5433 for DBeaver (internal still 5432)
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+      - ./postgis/init:/docker-entrypoint-initdb.d  # Init scripts
+    networks:
+      - nepal-location-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osm_user -d nepal_osm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
   # OSM-SYNCER - Periodic Data Synchronizer
   # ===========================================
   osm-syncer:
@@ -99,11 +123,14 @@ services:
       - ./osm-syncer/.env
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - DATABASE_URL=postgres://osm_user:osm_secret_password@postgis:5432/nepal_osm
       - SYNC_INTERVAL_MINUTES=5
     networks:
       - nepal-location-net
     depends_on:
       elasticsearch:
+        condition: service_healthy
+      postgis:
         condition: service_healthy
 
 # ===========================================
@@ -118,4 +145,6 @@ networks:
 # ===========================================
 volumes:
   elasticsearch-data:
+    driver: local
+  postgis-data:
     driver: local
