@@ -1,8 +1,6 @@
 # Nepal Location Resolution Service
 # Docker Compose configuration for microservices architecture
 
-version: '3.8'
-
 services:
   # ===========================================
   # TRAEFIK - Reverse Proxy & Load Balancer
