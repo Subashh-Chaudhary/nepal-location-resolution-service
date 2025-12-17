@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files (keep .env.example)
+# .env  # Uncomment to ignore .env files
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+search-core/search-core
+osm-syncer/osm-syncer
+
+# Test coverage
+coverage/
+*.cover
+*.out

@@ -1,0 +1,37 @@
+# Traefik dynamic configuration
+# This file configures routing rules for services
+
+http:
+  routers:
+    # Route /widget.js to react-widget service
+    widget-router:
+      rule: "Host(`search.eshasan.local`) && PathPrefix(`/widget.js`)"
+      service: react-widget
+      entryPoints:
+        - web
+
+    # Route /graphql to search-core service
+    graphql-router:
+      rule: "Host(`search.eshasan.local`) && PathPrefix(`/graphql`)"
+      service: search-core
+      entryPoints:
+        - web
+
+    # Route root and other paths to react-widget (for testing)
+    default-router:
+      rule: "Host(`search.eshasan.local`)"
+      service: react-widget
+      entryPoints:
+        - web
+      priority: 1
+
+  services:
+    react-widget:
+      loadBalancer:
+        servers:
+          - url: "http://react-widget:80"
+
+    search-core:
+      loadBalancer:
+        servers:
+          - url: "http://search-core:8080"
