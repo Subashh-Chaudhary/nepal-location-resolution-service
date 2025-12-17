@@ -38,3 +38,6 @@ osm-syncer/osm-syncer
 coverage/
 *.cover
 *.out
+
+# large files
+*.pbf
