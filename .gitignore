@@ -41,3 +41,7 @@ coverage/
 
 # large files
 *.pbf
+*.pbf
+data/
+*.pbf
+data/
