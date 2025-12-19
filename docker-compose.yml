@@ -150,6 +150,7 @@ services:
       - POSTGRES_PASSWORD=osm_secret_password
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - ES_INDEX=nepal_locations
+      - FORCE_RECREATE=false  # Set to 'true' to force index recreation
     volumes:
       - ./elasticsearch/mappings:/app/mappings:ro
     networks:

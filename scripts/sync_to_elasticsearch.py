@@ -34,6 +34,7 @@ class LocationSyncer:
         self.db_name = os.getenv('POSTGRES_DB', 'nepal_location_pg')
         self.db_user = os.getenv('POSTGRES_USER', 'osm_user')
         self.db_pass = os.getenv('POSTGRES_PASSWORD', 'osm_secret_password')
+        self.force_recreate = os.getenv('FORCE_RECREATE', 'false').lower() == 'true'
         
         # Initialize connections
         self.es = Elasticsearch([self.es_url])
@@ -77,11 +78,16 @@ class LocationSyncer:
             mapping = self._get_default_mapping()
         
         if self.es.indices.exists(index=self.es_index):
-            logger.info(f"Index {self.es_index} already exists, deleting...")
-            self.es.indices.delete(index=self.es_index)
-            
-        self.es.indices.create(index=self.es_index, body=mapping)
-        logger.info(f"Created index: {self.es_index}")
+            if self.force_recreate:
+                logger.info(f"Index {self.es_index} already exists, deleting (FORCE_RECREATE=true)...")
+                self.es.indices.delete(index=self.es_index)
+                self.es.indices.create(index=self.es_index, body=mapping)
+                logger.info(f"Created index: {self.es_index}")
+            else:
+                logger.info(f"Index {self.es_index} already exists, skipping creation")
+        else:
+            self.es.indices.create(index=self.es_index, body=mapping)
+            logger.info(f"Created index: {self.es_index}")
         
     def _get_default_mapping(self) -> Dict:
         """Fallback default mapping"""
@@ -548,6 +554,13 @@ class LocationSyncer:
             
             # Create/recreate index
             self.create_index()
+            
+            # Check if index already has data and skip if not forcing
+            if not self.force_recreate and self.es.indices.exists(index=self.es_index):
+                count = self.es.count(index=self.es_index)['count']
+                if count > 0:
+                    logger.info(f"Index {self.es_index} already has {count} documents, skipping sync (set FORCE_RECREATE=true to override)")
+                    return
             
             # Sync all entity types
             total_places = self.sync_places()
