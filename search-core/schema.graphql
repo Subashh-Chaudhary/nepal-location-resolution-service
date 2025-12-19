@@ -1,0 +1,163 @@
+# GraphQL schema for Nepal Location Resolution Service
+
+type Query {
+  """
+  Search for locations with optional parent validation
+  Supports fuzzy matching on place names in both Nepali and English
+  """
+  searchLocation(input: LocationSearchInput!): LocationSearchResponse!
+  
+  """
+  Health check endpoint
+  """
+  health: HealthStatus!
+}
+
+"""
+Input for location search with optional parent validation
+"""
+input LocationSearchInput {
+  """Name of the place to search (supports fuzzy matching)"""
+  query: String!
+  
+  """Optional: Expected ward number for validation"""
+  ward: Int
+  
+  """Optional: Expected municipality name for validation"""
+  municipality: String
+  
+  """Optional: Expected district name for validation"""
+  district: String
+  
+  """Optional: Expected province name for validation"""
+  province: String
+  
+  """Maximum number of results to return (default: 10, max: 50)"""
+  limit: Int
+}
+
+"""
+Response containing search results
+"""
+type LocationSearchResponse {
+  """List of matching locations"""
+  results: [Location!]!
+  
+  """Total number of matches found"""
+  total: Int!
+  
+  """Query execution time in milliseconds"""
+  took: Int!
+  
+  """Validation result if parent filters were provided"""
+  validation: ValidationResult
+}
+
+"""
+Location entity with complete administrative hierarchy
+"""
+type Location {
+  """Unique identifier"""
+  id: String!
+  
+  """Entity type: place, admin_boundary, poi, road"""
+  entityType: String!
+  
+  """Primary name (may be in Nepali or English)"""
+  name: String!
+  
+  """Nepali name"""
+  nameNe: String
+  
+  """English name"""
+  nameEn: String
+  
+  """Place type (e.g., village, town, city, hamlet)"""
+  placeType: String
+  
+  """Administrative level (2=country, 4=province, 6=district, 7=municipality, 9=ward)"""
+  adminLevel: Int
+  
+  """Geographic coordinates"""
+  location: GeoPoint
+  
+  """Ward number"""
+  ward: Int
+  
+  """Municipality name"""
+  municipality: String
+  
+  """Municipality name in Nepali"""
+  municipalityNe: String
+  
+  """District name"""
+  district: String
+  
+  """District name in Nepali"""
+  districtNe: String
+  
+  """Province name"""
+  province: String
+  
+  """Province name in Nepali"""
+  provinceNe: String
+  
+  """Country (always "Nepal")"""
+  country: String!
+  
+  """Search relevance score"""
+  score: Float!
+}
+
+"""
+Geographic point coordinates
+"""
+type GeoPoint {
+  """Latitude"""
+  lat: Float!
+  
+  """Longitude"""
+  lon: Float!
+}
+
+"""
+Validation result when parent filters are provided
+"""
+type ValidationResult {
+  """Whether the validation passed"""
+  valid: Boolean!
+  
+  """List of mismatches found during validation"""
+  mismatches: [ValidationMismatch!]!
+  
+  """Validation message"""
+  message: String
+}
+
+"""
+Details about a validation mismatch
+"""
+type ValidationMismatch {
+  """Field name that mismatched"""
+  field: String!
+  
+  """Expected value"""
+  expected: String!
+  
+  """Actual value found"""
+  actual: String
+}
+
+"""
+Health status of the service
+"""
+type HealthStatus {
+  """Service status"""
+  status: String!
+  
+  """Elasticsearch connection status"""
+  elasticsearch: String!
+  
+  """Service version"""
+  version: String!
+}

@@ -1,0 +1,160 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 1,
+    "analysis": {
+      "filter": {
+        "nepali_stop": {
+          "type": "stop",
+          "stopwords": ["को", "का", "की", "ले", "मा", "लाई"]
+        },
+        "edge_ngram_filter": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 20
+        }
+      },
+      "analyzer": {
+        "nepali_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "nepali_stop"]
+        },
+        "english_fuzzy": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "edge_ngram_filter"]
+        },
+        "nepali_fuzzy": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "nepali_stop", "edge_ngram_filter"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "keyword"
+      },
+      "entity_type": {
+        "type": "keyword"
+      },
+      "name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "fuzzy": {
+            "type": "text",
+            "analyzer": "english_fuzzy"
+          }
+        }
+      },
+      "name_ne": {
+        "type": "text",
+        "analyzer": "nepali_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "fuzzy": {
+            "type": "text",
+            "analyzer": "nepali_fuzzy"
+          }
+        }
+      },
+      "name_en": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "fuzzy": {
+            "type": "text",
+            "analyzer": "english_fuzzy"
+          }
+        }
+      },
+      "place_type": {
+        "type": "keyword"
+      },
+      "admin_level": {
+        "type": "integer"
+      },
+      "location": {
+        "type": "geo_point"
+      },
+      "ward": {
+        "type": "integer"
+      },
+      "municipality": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "municipality_ne": {
+        "type": "text",
+        "analyzer": "nepali_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "district": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "district_ne": {
+        "type": "text",
+        "analyzer": "nepali_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "province": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "province_ne": {
+        "type": "text",
+        "analyzer": "nepali_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "country": {
+        "type": "keyword"
+      },
+      "tags": {
+        "type": "object",
+        "enabled": false
+      },
+      "search_text": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "boost_score": {
+        "type": "float"
+      }
+    }
+  }
+}

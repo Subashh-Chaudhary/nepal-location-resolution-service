@@ -1,73 +1,63 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/playground"
+	elasticsearch "github.com/elastic/go-elasticsearch/v8"
+
+	"search-core/graph"
 )
 
-// Response represents the GraphQL-like response structure
-type Response struct {
-	Data string `json:"data"`
-}
-
-// graphqlHandler handles requests to /graphql endpoint
-// Currently returns dummy JSON response
-func graphqlHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[search-core] Received %s request to %s", r.Method, r.URL.Path)
-
-	// Set CORS headers for cross-origin requests
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
-
-	// Handle preflight OPTIONS request
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Return dummy response
-	response := Response{
-		Data: "Hello from search-core",
-	}
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("[search-core] Error encoding response: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("[search-core] Sent dummy response successfully")
-}
-
-// healthHandler provides a health check endpoint
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
-}
-
 func main() {
-	// Get port from environment or default to 8080
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// Register handlers
-	http.HandleFunc("/graphql", graphqlHandler)
-	http.HandleFunc("/health", healthHandler)
-
-	// Start server
-	addr := fmt.Sprintf(":%s", port)
-	log.Printf("[search-core] Starting server on %s", addr)
-	log.Printf("[search-core] GraphQL endpoint: http://localhost%s/graphql", addr)
-	log.Printf("[search-core] Health endpoint: http://localhost%s/health", addr)
-
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("[search-core] Server failed to start: %v", err)
+	esURL := os.Getenv("ELASTICSEARCH_URL")
+	if esURL == "" {
+		esURL = "http://localhost:9200"
 	}
+
+	// Initialize Elasticsearch client
+	cfg := elasticsearch.Config{
+		Addresses: []string{esURL},
+	}
+	esClient, err := elasticsearch.NewClient(cfg)
+	if err != nil {
+		log.Fatalf("Error creating Elasticsearch client: %v", err)
+	}
+
+	// Test Elasticsearch connection
+	res, err := esClient.Info()
+	if err != nil {
+		log.Fatalf("Error getting Elasticsearch info: %v", err)
+	}
+	res.Body.Close()
+	log.Printf("Connected to Elasticsearch at %s", esURL)
+
+	// Create resolver with Elasticsearch client
+	resolver := &graph.Resolver{
+		ESClient: esClient,
+	}
+
+	// Create GraphQL server
+	srv := handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+
+	// Register handlers
+	http.Handle("/", playground.Handler("GraphQL playground", "/graphql"))
+	http.Handle("/graphql", srv)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"healthy","elasticsearch":"connected"}`))
+	})
+
+	log.Printf("Server starting on :%s", port)
+	log.Printf("GraphQL endpoint: http://localhost:%s/graphql", port)
+	log.Printf("GraphQL playground: http://localhost:%s/", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

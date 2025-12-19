@@ -1,19 +1,25 @@
-# Search Core - Go service
-FROM golang:1.21-alpine AS builder
+# Search Core - Go GraphQL service with Elasticsearch
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod file
-COPY go.mod ./
+# Install build dependencies
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Copy source code
-COPY main.go ./
+COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o search-core .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o search-core .
 
 # Final stage - minimal image
 FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 

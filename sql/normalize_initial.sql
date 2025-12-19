@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS n_idx_poi_tags ON normalized.poi USING GIN (tags);
 TRUNCATE normalized.admin_boundaries, normalized.places, normalized.named_roads, normalized.poi RESTART IDENTITY;
 
 -- Populate admin_boundaries from planet_osm_polygon (admin_level present)
+-- Only include proper administrative boundaries (with boundary=administrative tag)
 INSERT INTO normalized.admin_boundaries (osm_id, name, name_ne, admin_level, boundary_type, tags, geom, centroid)
 SELECT
   osm_id,
@@ -92,7 +93,8 @@ SELECT
   ST_Transform(ST_Multi(way),4326) AS geom,
   ST_Transform(ST_Centroid(ST_Multi(way)),4326) AS centroid
 FROM planet_osm_polygon
-WHERE (tags ? 'admin_level') OR (tags ? 'boundary') OR admin_level IS NOT NULL OR boundary IS NOT NULL;
+WHERE ((tags ? 'admin_level') OR (tags ? 'boundary') OR admin_level IS NOT NULL OR boundary IS NOT NULL)
+  AND COALESCE(boundary, tags->'boundary') = 'administrative';
 
 -- Populate places: nodes with place tag or place column
 INSERT INTO normalized.places (osm_id, osm_type, name, name_ne, place_type, admin_level, tags, geom, centroid)
@@ -153,36 +155,63 @@ WHERE ( (name IS NOT NULL) OR (tags ? 'name') ) AND NOT ( (place IS NOT NULL) OR
 
 CREATE INDEX IF NOT EXISTS n_idx_admin_boundaries_admin_level ON normalized.admin_boundaries (admin_level);
 
--- Update places with province
+-- Update places with province (admin_level = 4)
+-- Use subquery to get smallest containing boundary in case of overlaps
 UPDATE normalized.places p
-SET province = a.name
-FROM normalized.admin_boundaries a
-WHERE a.admin_level = 4
-  AND ST_Intersects(a.geom, COALESCE(p.centroid, p.geom));
+SET province = (
+  SELECT a.name
+  FROM normalized.admin_boundaries a
+  WHERE a.admin_level = 4
+    AND COALESCE(p.centroid, p.geom) && a.geom
+    AND ST_Contains(a.geom, COALESCE(p.centroid, p.geom))
+  ORDER BY ST_Area(a.geom) ASC
+  LIMIT 1
+);
 
 -- Update places with district (admin_level = 6)
+-- Use subquery to get smallest containing boundary in case of overlaps
 UPDATE normalized.places p
-SET district = a.name
-FROM normalized.admin_boundaries a
-WHERE a.admin_level = 6
-  AND ST_Intersects(a.geom, COALESCE(p.centroid, p.geom));
+SET district = (
+  SELECT a.name
+  FROM normalized.admin_boundaries a
+  WHERE a.admin_level = 6
+    AND COALESCE(p.centroid, p.geom) && a.geom
+    AND ST_Contains(a.geom, COALESCE(p.centroid, p.geom))
+  ORDER BY ST_Area(a.geom) ASC
+  LIMIT 1
+);
 
 -- Update places with municipality (admin_level = 7)
+-- Use subquery to get smallest containing boundary in case of overlaps
 UPDATE normalized.places p
-SET municipality = a.name
-FROM normalized.admin_boundaries a
-WHERE a.admin_level = 7
-  AND ST_Intersects(a.geom, COALESCE(p.centroid, p.geom));
+SET municipality = (
+  SELECT a.name
+  FROM normalized.admin_boundaries a
+  WHERE a.admin_level = 7
+    AND COALESCE(p.centroid, p.geom) && a.geom
+    AND ST_Contains(a.geom, COALESCE(p.centroid, p.geom))
+  ORDER BY ST_Area(a.geom) ASC
+  LIMIT 1
+);
 
--- Update places with ward (admin_level 9)
+-- Update places with ward (admin_level = 9)
+-- Extract ward number from tags or name using regex to handle non-digit characters
+-- Wrapped in CASE to safely handle conversion failures
 UPDATE normalized.places p
-SET ward = COALESCE(
-    NULLIF(a.tags->'ward','')::INTEGER,
-    NULLIF(a.tags->'ref','')::INTEGER
-  )
-FROM normalized.admin_boundaries a
-WHERE a.admin_level = 9
-  AND ST_Intersects(a.geom, COALESCE(p.centroid, p.geom));
+SET ward = (
+  SELECT 
+    CASE 
+      WHEN regexp_replace(COALESCE(a.tags->'ward', a.tags->'ref', a.name, ''), '\\D', '', 'g') ~ '^[0-9]+$'
+      THEN regexp_replace(COALESCE(a.tags->'ward', a.tags->'ref', a.name, ''), '\\D', '', 'g')::INTEGER
+      ELSE NULL
+    END
+  FROM normalized.admin_boundaries a
+  WHERE a.admin_level = 9
+    AND COALESCE(p.centroid, p.geom) && a.geom
+    AND ST_Contains(a.geom, COALESCE(p.centroid, p.geom))
+  ORDER BY ST_Area(a.geom) ASC
+  LIMIT 1
+);
 
 -- Analyze normalized tables for planner
 ANALYZE normalized.admin_boundaries;
@@ -190,9 +219,25 @@ ANALYZE normalized.places;
 ANALYZE normalized.named_roads;
 ANALYZE normalized.poi;
 
+-- WORKAROUND: Infer municipality from ward names when municipality is NULL
+-- This handles cases where OSM has wards (admin_level=9) but missing municipality (admin_level=7)
+-- Example: "Nepalgunj-01" -> municipality = "Nepalgunj"
+UPDATE normalized.places p
+SET municipality = (
+  SELECT regexp_replace(a.name, '-[0-9]+$', '')  -- Remove ward number suffix
+  FROM normalized.admin_boundaries a
+  WHERE a.admin_level = 9
+    AND a.name ~ '-[0-9]+$'  -- Has ward number pattern
+    AND COALESCE(p.centroid, p.geom) && a.geom
+    AND ST_Contains(a.geom, COALESCE(p.centroid, p.geom))
+  ORDER BY ST_Area(a.geom) ASC
+  LIMIT 1
+)
+WHERE p.municipality IS NULL;
+
 COMMIT;
 
 -- Verification helper queries (copy/paste into psql or DBeaver):
 -- SELECT COUNT(*) FROM normalized.places;
 -- SELECT COUNT(*) FROM normalized.admin_boundaries WHERE admin_level=6; -- districts
--- SELECT name, province, district FROM normalized.places WHERE name IS NOT NULL LIMIT 20;
+-- SELECT name, province, district, municipality, ward FROM normalized.places WHERE name IN ('Piprihawa Gaun', 'Suhiya Chok') LIMIT 20;

@@ -133,6 +133,33 @@ services:
       postgis:
         condition: service_healthy
 
+  # ===========================================
+  # ES-SYNCER - PostgreSQL to Elasticsearch Sync
+  # ===========================================
+  es-syncer:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile
+    container_name: es-syncer
+    restart: "no"  # Run once on startup
+    environment:
+      - POSTGRES_HOST=postgis
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=nepal_location_pg
+      - POSTGRES_USER=osm_user
+      - POSTGRES_PASSWORD=osm_secret_password
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ES_INDEX=nepal_locations
+    volumes:
+      - ./elasticsearch/mappings:/app/mappings:ro
+    networks:
+      - nepal-location-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      postgis:
+        condition: service_healthy
+
 # ===========================================
 # NETWORKS
 # ===========================================
