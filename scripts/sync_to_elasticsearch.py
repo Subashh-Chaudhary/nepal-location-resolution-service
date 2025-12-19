@@ -263,6 +263,7 @@ class LocationSyncer:
             name,
             ST_Y(ST_Transform(geom, 4326)) as lat,
             ST_X(ST_Transform(geom, 4326)) as lon,
+            ST_AsText(ST_Transform(geom, 4326)) as centroid,
             tags
         FROM normalized.poi
         WHERE name IS NOT NULL
@@ -286,6 +287,26 @@ class LocationSyncer:
                         tags = {}
                     name_en = tags.get('name:en', row['name'])
                     
+                    # Get hierarchy via spatial lookup
+                    hierarchy = {
+                        'municipality': None,
+                        'municipality_ne': None,
+                        'district': None,
+                        'district_ne': None,
+                        'province': None,
+                        'province_ne': None
+                    }
+                    centroid = row.get('centroid')
+                    if centroid:
+                        parent_hierarchy = self._get_parent_admin(centroid)
+                        if parent_hierarchy:
+                            hierarchy['municipality'] = parent_hierarchy.get('municipality')
+                            hierarchy['municipality_ne'] = parent_hierarchy.get('municipality_ne')
+                            hierarchy['district'] = parent_hierarchy.get('district')
+                            hierarchy['district_ne'] = parent_hierarchy.get('district_ne')
+                            hierarchy['province'] = parent_hierarchy.get('province')
+                            hierarchy['province_ne'] = parent_hierarchy.get('province_ne')
+                    
                     doc = {
                         '_index': self.es_index,
                         '_id': row['doc_id'],
@@ -298,6 +319,12 @@ class LocationSyncer:
                                 'lat': row['lat'],
                                 'lon': row['lon']
                             } if row.get('lat') else None,
+                            'municipality': hierarchy.get('municipality'),
+                            'municipality_ne': hierarchy.get('municipality_ne'),
+                            'district': hierarchy.get('district'),
+                            'district_ne': hierarchy.get('district_ne'),
+                            'province': hierarchy.get('province'),
+                            'province_ne': hierarchy.get('province_ne'),
                             'country': 'Nepal',
                             'boost_score': 0.5,  # Lower priority for POI
                             'tags': tags,
@@ -317,6 +344,7 @@ class LocationSyncer:
             'road_' || id::text as doc_id,
             'road' as entity_type,
             name,
+            ST_AsText(ST_Transform(ST_Centroid(geom), 4326)) as centroid,
             tags
         FROM normalized.named_roads
         WHERE name IS NOT NULL
@@ -340,6 +368,26 @@ class LocationSyncer:
                         tags = {}
                     name_en = tags.get('name:en', row['name'])
                     
+                    # Get hierarchy via spatial lookup
+                    hierarchy = {
+                        'municipality': None,
+                        'municipality_ne': None,
+                        'district': None,
+                        'district_ne': None,
+                        'province': None,
+                        'province_ne': None
+                    }
+                    centroid = row.get('centroid')
+                    if centroid:
+                        parent_hierarchy = self._get_parent_admin(centroid)
+                        if parent_hierarchy:
+                            hierarchy['municipality'] = parent_hierarchy.get('municipality')
+                            hierarchy['municipality_ne'] = parent_hierarchy.get('municipality_ne')
+                            hierarchy['district'] = parent_hierarchy.get('district')
+                            hierarchy['district_ne'] = parent_hierarchy.get('district_ne')
+                            hierarchy['province'] = parent_hierarchy.get('province')
+                            hierarchy['province_ne'] = parent_hierarchy.get('province_ne')
+                    
                     doc = {
                         '_index': self.es_index,
                         '_id': row['doc_id'],
@@ -348,6 +396,12 @@ class LocationSyncer:
                             'entity_type': row['entity_type'],
                             'name': row['name'],
                             'name_en': name_en,
+                            'municipality': hierarchy.get('municipality'),
+                            'municipality_ne': hierarchy.get('municipality_ne'),
+                            'district': hierarchy.get('district'),
+                            'district_ne': hierarchy.get('district_ne'),
+                            'province': hierarchy.get('province'),
+                            'province_ne': hierarchy.get('province_ne'),
                             'country': 'Nepal',
                             'boost_score': 0.3,  # Lowest priority
                             'search_text': row['name']
@@ -423,24 +477,28 @@ class LocationSyncer:
         return hierarchy
     
     def _get_parent_admin(self, centroid: str) -> Optional[Dict]:
-        """Find parent district and province for a location using spatial query"""
+        """Find parent municipality, district and province for a location using spatial query"""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 query = """
                     SELECT 
+                        m.name as municipality,
+                        m.name_ne as municipality_ne,
                         d.name as district,
                         d.name_ne as district_ne,
                         p.name as province,
                         p.name_ne as province_ne
                     FROM normalized.admin_boundaries d
                     CROSS JOIN normalized.admin_boundaries p
+                    LEFT JOIN normalized.admin_boundaries m ON m.admin_level = 7 
+                        AND ST_Contains(m.geom, ST_GeomFromText(%s, 4326))
                     WHERE d.admin_level = 6 
                       AND p.admin_level = 4
                       AND ST_Contains(d.geom, ST_GeomFromText(%s, 4326))
                       AND ST_Contains(p.geom, ST_GeomFromText(%s, 4326))
                     LIMIT 1
                 """
-                cur.execute(query, (centroid, centroid))
+                cur.execute(query, (centroid, centroid, centroid))
                 result = cur.fetchone()
                 return dict(result) if result else None
         except Exception as e:
