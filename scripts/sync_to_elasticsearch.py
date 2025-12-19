@@ -194,6 +194,7 @@ class LocationSyncer:
             boundary_type,
             ST_Y(ST_Transform(centroid, 4326)) as lat,
             ST_X(ST_Transform(centroid, 4326)) as lon,
+            ST_AsText(ST_Transform(centroid, 4326)) as centroid,
             tags
         FROM normalized.admin_boundaries
         WHERE name IS NOT NULL
@@ -362,27 +363,89 @@ class LocationSyncer:
         """Build admin hierarchy for admin boundary entities"""
         admin_level = row.get('admin_level')
         name = row.get('name')
+        name_ne = row.get('name_ne')
+        centroid = row.get('centroid')
         
-        hierarchy = {}
+        hierarchy = {
+            'ward': None,
+            'municipality': None,
+            'municipality_ne': None,
+            'district': None,
+            'district_ne': None,
+            'province': None,
+            'province_ne': None
+        }
         
         if admin_level == 4:  # Province
             hierarchy['province'] = name
-            hierarchy['province_ne'] = row.get('name_ne')
+            hierarchy['province_ne'] = name_ne or name
         elif admin_level == 6:  # District
             hierarchy['district'] = name
-            hierarchy['district_ne'] = row.get('name_ne')
+            hierarchy['district_ne'] = name_ne or name
+            # Find parent province via spatial query
+            if centroid:
+                parent_hierarchy = self._get_parent_admin(centroid)
+                if parent_hierarchy:
+                    hierarchy['province'] = parent_hierarchy.get('province')
+                    hierarchy['province_ne'] = parent_hierarchy.get('province_ne')
         elif admin_level == 7:  # Municipality
             hierarchy['municipality'] = name
-            hierarchy['municipality_ne'] = row.get('name_ne')
+            hierarchy['municipality_ne'] = name_ne or name
+            # Find parent district and province via spatial query
+            if centroid:
+                parent_hierarchy = self._get_parent_admin(centroid)
+                if parent_hierarchy:
+                    hierarchy['district'] = parent_hierarchy.get('district')
+                    hierarchy['district_ne'] = parent_hierarchy.get('district_ne')
+                    hierarchy['province'] = parent_hierarchy.get('province')
+                    hierarchy['province_ne'] = parent_hierarchy.get('province_ne')
         elif admin_level == 9:  # Ward
-            # Extract municipality name from ward name
+            # Extract municipality and ward number from ward name (e.g., "Kathmandu-01")
             import re
-            match = re.match(r'^(.+)-\d+$', name or '')
+            match = re.match(r'^(.+)-(\d+)$', name or '')
             if match:
                 hierarchy['municipality'] = match.group(1)
                 hierarchy['municipality_ne'] = match.group(1)
+                try:
+                    hierarchy['ward'] = int(match.group(2))
+                except:
+                    pass
+            
+            # Find parent district and province via spatial query
+            if centroid:
+                parent_hierarchy = self._get_parent_admin(centroid)
+                if parent_hierarchy:
+                    hierarchy['district'] = parent_hierarchy.get('district')
+                    hierarchy['district_ne'] = parent_hierarchy.get('district_ne')
+                    hierarchy['province'] = parent_hierarchy.get('province')
+                    hierarchy['province_ne'] = parent_hierarchy.get('province_ne')
                 
         return hierarchy
+    
+    def _get_parent_admin(self, centroid: str) -> Optional[Dict]:
+        """Find parent district and province for a location using spatial query"""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                query = """
+                    SELECT 
+                        d.name as district,
+                        d.name_ne as district_ne,
+                        p.name as province,
+                        p.name_ne as province_ne
+                    FROM normalized.admin_boundaries d
+                    CROSS JOIN normalized.admin_boundaries p
+                    WHERE d.admin_level = 6 
+                      AND p.admin_level = 4
+                      AND ST_Contains(d.geom, ST_GeomFromText(%s, 4326))
+                      AND ST_Contains(p.geom, ST_GeomFromText(%s, 4326))
+                    LIMIT 1
+                """
+                cur.execute(query, (centroid, centroid))
+                result = cur.fetchone()
+                return dict(result) if result else None
+        except Exception as e:
+            logger.warning(f"Failed to get parent admin: {e}")
+            return None
         
     def _calculate_boost(self, entity_type: str, subtype: Optional[str] = None) -> float:
         """Calculate search boost score based on entity type"""
